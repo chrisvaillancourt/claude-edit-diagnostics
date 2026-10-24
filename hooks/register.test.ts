@@ -13,15 +13,18 @@ const configText = (...checks: object[]) => JSON.stringify({ version: 1, checks:
 type Out = { exitCode: number; stdout: string; stderr?: string } | { deny: string } | ((argv: string[]) => { exitCode: number; stdout: string; stderr?: string } | { deny: string })
 
 /** The engine beneath the plugin: a project at /work/proj, its files, a scripted process runner. */
-const world = (on: On, opts: { files?: Record<string, string>; approved?: string | null; outputs?: Record<string, Out> } = {}) => {
+const world = (on: On, opts: { files?: Record<string, string>; approved?: string | null; outputs?: Record<string, Out>; links?: Record<string, string> } = {}) => {
   const text = configText()
   const files: Record<string, string> = { [CONFIG]: text, [`${ROOT}/src/a.ts`]: '', [`${ROOT}/src/b.ts`]: '', [`${ROOT}/README.md`]: '', ...opts.files }
   const approved = opts.approved === undefined ? text : opts.approved
   mock.store(on, approved === null ? {} : { [`approval:${ROOT}`]: { text: approved } })
   const clock = mock.clock(on, { now: 1000 })
   const dirs = new Set([ROOT, `${ROOT}/.claude`, `${ROOT}/src`])
+  /** Symbolic links inside the project: a spelling and the real path it lands on. */
+  const links = opts.links ?? {}
   on('fs.stat', ($, e) => {
-    const path = e.path.startsWith('/') ? e.path : `${ROOT}/${e.path}`
+    const spelled = e.path.startsWith('/') ? e.path : `${ROOT}/${e.path}`
+    const path = links[spelled] ?? spelled
     if (dirs.has(path)) return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath: path } : {}) } }
     if (files[path] === undefined) return { deny: 'ENOENT' }
     return { value: { kind: 'file', size: 1, mtimeMs: 0, isLink: false, ...(e.resolve ? { realPath: path } : {}) } }
@@ -204,6 +207,23 @@ describe('tool delivery', () => {
     const r = await write($, `${ROOT}/src/a.ts`)
     expect(w.runs.map(x => x.argv[0])).toEqual([`${ROOT}/node_modules/.bin/tsc`])
     expect(r.context).toBe(undefined)
+  })
+})
+
+describe('paths', () => {
+  test('a finding reported through an internal symlink belongs to the edited file', async ($, on) => {
+    const w = world(on, {
+      files: { [`${ROOT}/real/a.ts`]: '' },
+      links: { [`${ROOT}/linked/a.ts`]: `${ROOT}/real/a.ts` },
+      outputs: { tsc: { exitCode: 2, stdout: "linked/a.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.\n" } },
+    })
+    w.files[CONFIG] = configText({ ...TYPES, include: ['**/*.ts'] })
+    await start($)
+    await cmd($, 'approve')
+    const r = await write($, `${ROOT}/real/a.ts`)
+    expect(ctx(r)).toContain('types (tsc): 1 newly observed in edited files')
+    expect(ctx(r)).toContain("  real/a.ts:1:14 error TS2322: Type 'string' is not assignable to type 'number'.")
+    expect(ctx(r)).not.toContain('other file')
   })
 })
 

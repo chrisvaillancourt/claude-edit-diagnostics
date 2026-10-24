@@ -12,6 +12,7 @@ import {
   assessCheck,
   configFrom,
   configState,
+  findingPaths,
   formatReport,
   inactiveNote,
   isActive,
@@ -25,6 +26,7 @@ import {
   relativeToRoot,
   statusText,
   summaryLines,
+  withRealPaths,
 } from './policy'
 import type { CheckOutcome, ConfigState, Plan } from './policy'
 import type { ChecksFile, Config, ParseResult, Session } from '../types'
@@ -129,7 +131,14 @@ async function execute($: EngineInterface, r: string, plan: Plan, deadline: numb
   }
   const problem = outputProblem(raw)
   if (problem !== null) return { plan, parsed: { ok: false, reason: problem } }
-  return { plan, parsed: parseOutput(plan.check.parser, raw) }
+  const parsed = parseOutput(plan.check.parser, raw)
+  // Give reported paths the same identity as edited ones (both realPath).
+  const realOf = new Map<string, string>()
+  for (const abs of findingPaths(parsed, plan.cwdAbs)) {
+    const stat = await $.fs.stat(abs, { resolve: true }).catch(() => undefined)
+    if (stat?.realPath !== undefined) realOf.set(abs, stat.realPath)
+  }
+  return { plan, parsed: withRealPaths(parsed, plan.cwdAbs, realOf) }
 }
 
 /**

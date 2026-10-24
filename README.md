@@ -119,6 +119,7 @@ No model calls. The cost is the checks' own run time, which Claude waits for aft
 - `tool` mode runs the checks once per edit; `batch` mode is unverified live on 2.1.310 because the managed plugin skipped its hook.
 - Headless runs (`claude -p`) can't approve; they use an approval made earlier in an interactive session.
 - No ESLint parser: ESLint wasn't available to capture real output from. Use the `json` format through a wrapper.
+- Paths in a check's output are resolved on disk (links followed) to match them with edited files, up to 200 distinct paths per check; past that a path reached through a link may count as another file.
 - At most four checks, 50 file arguments per check per run, and 200 tracked files per conversation (the oldest are forgotten and become unbaselined again).
 - Turning the mod off can't stop a command that is already running; it runs until it exits or times out.
 

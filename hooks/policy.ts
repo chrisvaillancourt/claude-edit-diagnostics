@@ -241,6 +241,35 @@ export function planRun(checks: readonly Check[], root: string, paths: readonly 
   return plans
 }
 
+/** At most this many distinct finding paths per check are resolved on disk; the rest keep their spelling. */
+export const MAX_RESOLVED_PATHS = 200
+
+/** The distinct absolute paths a parse names, as spelled (relative ones against the check's cwd). */
+export function findingPaths(parsed: ParseResult, cwdAbs: string): string[] {
+  if (!parsed.ok) return []
+  const out = new Set<string>()
+  for (const f of parsed.findings) if (f.file !== null) out.add(joinAbs(cwdAbs, f.file))
+  return [...out].slice(0, MAX_RESOLVED_PATHS)
+}
+
+/**
+ * The parse with every finding's file replaced by where it lands on disk
+ * (`real`: spelled absolute path → realPath), so a finding reached through a
+ * link inside the project has the edited file's identity. Unresolved paths
+ * keep their absolute spelling.
+ */
+export function withRealPaths(parsed: ParseResult, cwdAbs: string, real: ReadonlyMap<string, string>): ParseResult {
+  if (!parsed.ok) return parsed
+  return {
+    ok: true,
+    findings: parsed.findings.map(f => {
+      if (f.file === null) return f
+      const abs = joinAbs(cwdAbs, f.file)
+      return { ...f, file: real.get(abs) ?? abs }
+    }),
+  }
+}
+
 export type RawRun = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
 
 /** Why a finished run's output can't be parsed at all, or null. */
