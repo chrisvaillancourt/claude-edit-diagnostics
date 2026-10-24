@@ -134,7 +134,7 @@ describe('tool delivery', () => {
     })
     await start($)
     const r = await write($, `${ROOT}/src/a.ts`)
-    expect(w.runs.map(x => x.argv)).toEqual([['missing-tsc'], ['lintwrap', 'src/a.ts']])
+    expect(w.runs.map(x => x.argv)).toEqual([['missing-tsc'], ['lintwrap', './src/a.ts']])
     expect(ctx(r)).toContain('types (tsc): NOT VERIFIED: could not run: spawn missing-tsc ENOENT')
     expect(ctx(r)).toContain('  src/a.ts:2:3 warning W1: unused')
   })
@@ -173,7 +173,7 @@ describe('tool delivery', () => {
     expect(ctx(inner)).toContain('an earlier check run is still going')
     expect(ctx(outer)).toContain('lint (json): no findings in src/a.ts')
     await edit($, `${ROOT}/src/a.ts`)
-    expect(w.runs.map(x => x.argv)).toEqual([['lintwrap', 'src/a.ts'], ['lintwrap', 'src/b.ts', 'src/a.ts']])
+    expect(w.runs.map(x => x.argv)).toEqual([['lintwrap', './src/a.ts'], ['lintwrap', './src/b.ts', './src/a.ts']])
   })
 
   test('off during a run drops its results', async ($, on) => {
@@ -252,7 +252,7 @@ describe('batch delivery', () => {
     expect(ctx(b)).toContain('not verified yet')
     expect(w.runs.length).toBe(0)
     const r = await $.classic.PostToolBatch({ tool_calls: [{ tool_name: 'Write', tool_input: {}, tool_use_id: 'x' }] })
-    expect(w.runs.map(x => x.argv)).toEqual([['lintwrap', 'src/a.ts', 'src/b.ts']])
+    expect(w.runs.map(x => x.argv)).toEqual([['lintwrap', './src/a.ts', './src/b.ts']])
     expect(r.additionalContext?.[0]).toBe('from below')
     expect(r.additionalContext?.[1]).toContain('lint (json): no findings in src/a.ts, src/b.ts')
   })

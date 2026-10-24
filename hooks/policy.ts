@@ -220,7 +220,9 @@ function operand(file: string, cwd: string, root: string): string {
   if (cwd === '.') rel = file
   else if (file.startsWith(`${cwd}/`)) rel = file.slice(cwd.length + 1)
   else return `${root}/${file}`
-  return rel.startsWith('-') ? `./${rel}` : rel
+  // Always `./`: a bare name can read as an option (`-x`) or a response file
+  // (`@x`, which tsc expands into arguments from the repository's own file).
+  return `./${rel}`
 }
 
 /** Which checks run for these root-relative edited paths, with their exact argv. */

@@ -54,7 +54,7 @@ Nothing runs until you approve the exact text of the repository's config file.
 | `argv` | The command and its arguments, run without a shell. `argv[0]` starting with `./` or `../` is relative to `cwd`; a bare name is found on `PATH`. |
 | `cwd` | Optional. A directory inside the project, relative to it (default `.`). |
 | `include` | Globs over project-relative paths: `*` (within a folder), `**` (any folders), `?`. No braces, negation or extglobs. A check runs only when an edited file matches. |
-| `scope` | `files`: the matched edited files are appended to `argv`, each as its own argument, relative to `cwd`. `project`: nothing is appended; the edited files only decide whether the check runs. |
+| `scope` | `files`: the matched edited files are appended to `argv`, each as its own argument, relative to `cwd` and always starting with `./` (so a file named `-x` or `@x` is never read as an option or a response file), or absolute when outside `cwd`. `project`: nothing is appended; the edited files only decide whether the check runs. |
 | `parser` | How to read the output: `tsc`, `ruff-json` or `json` (below). |
 
 Any other field, or a bad value, makes the config invalid, and the mod says why.

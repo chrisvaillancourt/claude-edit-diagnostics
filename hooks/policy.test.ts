@@ -168,11 +168,16 @@ describe('planRun', () => {
     expect(planRun([check()], ROOT, ['README.md'])).toEqual([])
   })
 
-  test('a files check appends separate operands relative to its cwd, guarding a leading dash', async () => {
+  test('a files check appends separate operands relative to its cwd, each led by ./ so none reads as an option or response file', async () => {
     const c = check({ id: 'lint', scope: 'files', cwd: 'py', include: ['**/*.py'], argv: ['./bin/ruff', 'check'] })
-    const plans = planRun([c], ROOT, ['py/a b.py', 'py/-x.py', 'other/c.py'])
-    expect(plans[0]!.argv).toEqual(['/work/proj/py/bin/ruff', 'check', 'a b.py', './-x.py', '/work/proj/other/c.py'])
+    const plans = planRun([c], ROOT, ['py/a b.py', 'py/-x.py', 'py/@a.py', 'py/+x.py', 'other/c.py'])
+    expect(plans[0]!.argv).toEqual(['/work/proj/py/bin/ruff', 'check', './a b.py', './-x.py', './@a.py', './+x.py', '/work/proj/other/c.py'])
     expect(plans[0]!.cwdAbs).toBe('/work/proj/py')
+  })
+
+  test('a tsc files check never passes @name bare (TypeScript reads it as a response file)', async () => {
+    const c = check({ scope: 'files', include: ['*.ts'], argv: ['tsc', '--noEmit', '--pretty', 'false'] })
+    expect(planRun([c], ROOT, ['@a.ts'])[0]!.argv).toEqual(['tsc', '--noEmit', '--pretty', 'false', './@a.ts'])
   })
 
   test('operands stop at 50, the rest counted', async () => {
