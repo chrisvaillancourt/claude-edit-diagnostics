@@ -1,0 +1,13 @@
+{
+  "name": "edit-diagnostics",
+  "owner": {
+    "name": "Chris Vaillancourt"
+  },
+  "plugins": [
+    {
+      "name": "edit-diagnostics",
+      "source": "./"
+    }
+  ],
+  "description": "After a batch of edits, runs the repo's own checks and gives the model a short, deduplicated list of what broke."
+}
