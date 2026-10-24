@@ -240,6 +240,15 @@ describe('novelty', () => {
     expect(other.kind === 'ok' && other.groups.length).toBe(1)
   })
 
+  test('a long message that changes only past its first 300 characters is newly observed', async () => {
+    const head = `Type '${'x'.repeat(340)}`
+    const snaps = nextSnapshots({}, [assessCheck(check(), ok([fd('src/a.ts', 1, `${head} OLD'`)]), ['src/a.ts'], ROOT, ROOT, {})], new Set())
+    const changed = assessCheck(check(), ok([fd('src/a.ts', 1, `${head} NEW'`)]), ['src/a.ts'], ROOT, ROOT, snaps)
+    expect(changed.kind === 'ok' && [changed.groups.length, changed.still]).toEqual([1, 0])
+    const same = assessCheck(check(), ok([fd('src/a.ts', 1, `${head} OLD'`)]), ['src/a.ts'], ROOT, ROOT, snaps)
+    expect(same.kind === 'ok' && [same.groups.length, same.still]).toEqual([0, 1])
+  })
+
   test('a failed parse is a failed outcome and leaves the snapshot alone', async () => {
     const out = assessCheck(check(), { ok: false, reason: 'output is not JSON' }, ['src/a.ts'], ROOT, ROOT, {})
     expect(out).toEqual({ kind: 'failed', id: 'types', parser: 'tsc', reason: 'output is not JSON' })

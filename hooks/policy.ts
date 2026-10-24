@@ -305,8 +305,25 @@ export type CheckOutcome =
       notChecked?: number
     }
 
+function fnv1a(text: string, seed: number): string {
+  let h = seed >>> 0
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
+
+/**
+ * Identity of a finding within its check and file: severity, code and the
+ * whole whitespace-collapsed message. A message over 300 characters is kept
+ * as its first 200, its length and two 32-bit hashes of all of it, so the
+ * stored snapshot stays small while any change anywhere in it is a new
+ * identity. Display truncation (MAX_MESSAGE_CHARS) is separate.
+ */
 export function fingerprint(f: Finding): string {
-  const message = f.message.replace(/\s+/g, ' ').trim().slice(0, 300)
+  const full = f.message.replace(/\s+/g, ' ').trim()
+  const message = full.length <= 300 ? full : `${full.slice(0, 200)}…#${full.length}:${fnv1a(full, 0x811c9dc5)}${fnv1a(full, 0x01000193)}`
   return `${f.severity}\u0002${f.code ?? ''}\u0002${message}`
 }
 
