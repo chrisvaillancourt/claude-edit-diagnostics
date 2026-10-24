@@ -260,9 +260,13 @@ export const register: Register = (on, options) => {
     return note === null ? r : { ...r, context: [...(r.context ?? []), note] }
   }).catch(($, e, next) => next(e)) // fail open: the native result always stands
 
+  // Batch delivery hooks are registered only in batch mode: on hosts where a
+  // managed plugin skips classic.PostToolBatch, the engine tells the model
+  // about every skipped hook, which would be noise in tool mode.
+  if (config.delivery !== 'batch') return
   on('classic.PostToolBatch', async ($, e, next) => {
     const r = await next(e)
-    if (e.agent_id !== undefined || config.delivery !== 'batch' || root === null) return r
+    if (e.agent_id !== undefined || root === null) return r
     const s = await update($, sessionAtom, v => ({ ...v, batchRuns: v.batchRuns + 1 }))
     if (!isActive(config, s) || s.pending.length === 0) return r
     let text: string | null
@@ -280,7 +284,7 @@ export const register: Register = (on, options) => {
   // Batch-mode health: edits still pending when the next main turn starts mean
   // the batch hook never reached this mod. Said once per session.
   on('turn.start', async ($, e, next) => {
-    if (e.agentId !== undefined || config.delivery !== 'batch') return next(e)
+    if (e.agentId !== undefined) return next(e)
     let isNew = false
     await update($, sessionAtom, s => {
       isNew = s.pending.length > 0 && s.running === null && !s.notices.includes(BATCH_SKIPPED)
