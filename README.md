@@ -83,6 +83,7 @@ Any other field, or a bad value, makes the config invalid, and the mod says why.
 - ESLint, pyright, mypy, cargo, go vet and other formats: wrap them to print the `json` format.
 - Exact batching in `tool` delivery mode, and delivery through a plugin seated above this one that skips its hooks.
 - Making approved commands read-only: they can write caches, build output or anything else they normally write.
+- Background descendants left by a wrapper that exits. The timeout ends the command the mod started, and its process tree while that command is still alive. A wrapper script that exits (or is killed) and leaves child processes holding its stdout or stderr is out of contract: those descendants can keep running past the timeout. Configure the checker binary itself in `argv`, or a wrapper that `exec`s it.
 
 ## Delivery modes
 
@@ -122,6 +123,7 @@ No model calls. The cost is the checks' own run time, which Claude waits for aft
 - Paths in a check's output are resolved on disk (links followed) to match them with edited files, up to 200 distinct paths per check; past that a path reached through a link may count as another file.
 - At most four checks, 50 file arguments per check per run, and 200 tracked files per conversation (the oldest are forgotten and become unbaselined again).
 - Turning the mod off can't stop a command that is already running; it runs until it exits or times out.
+- The timeout can only end the command the mod started. If that command is a wrapper that exits and leaves background children holding its output, those children keep running; Claude Code's process API offers no process-group control to stop them. Point `argv` at the checker itself, or use wrappers that `exec` it.
 
 ## Install
 
