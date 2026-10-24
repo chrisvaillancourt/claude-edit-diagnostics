@@ -96,7 +96,7 @@ On Claude Code 2.1.310 a built-in managed plugin can pass the `PostToolBatch` ho
 `/edit-diagnostics [status|on|off|approve|revoke]`
 
 - `status` (default): on or off, delivery mode, the config's state (missing, invalid, not approved, changed since approval, approved), the checks it would run, pending files and the last run.
-- `on` / `off`: switch the mod for this session. `off` takes effect at once, even mid-turn; a check already running is left to finish but its results are dropped.
+- `on` / `off`: switch the mod for this session. `off` takes effect at once, even mid-turn; a check already running is left to finish but its results are dropped, and no further check of that run starts. `revoke` does the same.
 - `approve`: approve the config's current text for this project and show what was approved. Only accepted when you type it yourself at the prompt; not from `claude -p`, another plugin or another session.
 - `revoke`: remove the approval for this project.
 

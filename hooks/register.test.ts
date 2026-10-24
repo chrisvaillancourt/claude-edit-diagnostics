@@ -186,6 +186,25 @@ describe('tool delivery', () => {
     await write($, `${ROOT}/src/a.ts`)
     expect(w.runs.length).toBe(1)
   })
+  test('off during the first of two checks: the second never starts', async ($, on) => {
+    const text = configText(TYPES, LINT)
+    const w = world(on, { approved: text, files: { [CONFIG]: text } })
+    await start($)
+    w.during.push(() => cmd($, 'off'))
+    const r = await write($, `${ROOT}/src/a.ts`)
+    expect(w.runs.map(x => x.argv[0])).toEqual([`${ROOT}/node_modules/.bin/tsc`])
+    expect(r.context).toBe(undefined)
+  })
+
+  test('revoke during the first of two checks: the second never starts', async ($, on) => {
+    const text = configText(TYPES, LINT)
+    const w = world(on, { approved: text, files: { [CONFIG]: text } })
+    await start($)
+    w.during.push(() => cmd($, 'revoke'))
+    const r = await write($, `${ROOT}/src/a.ts`)
+    expect(w.runs.map(x => x.argv[0])).toEqual([`${ROOT}/node_modules/.bin/tsc`])
+    expect(r.context).toBe(undefined)
+  })
 })
 
 describe('approval', () => {

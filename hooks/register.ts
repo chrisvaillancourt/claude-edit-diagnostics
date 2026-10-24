@@ -91,10 +91,23 @@ async function editedPath($: EngineInterface, r: string, path: string): Promise<
   return relativeToRoot(r, stat.realPath)
 }
 
-type Ran = { plan: Plan; parsed: ParseResult } | { plan: Plan; skipped: string }
+type Ran = { plan: Plan; parsed: ParseResult } | { plan: Plan; skipped: string } | { plan: Plan; stopped: true }
+
+/**
+ * Whether run `runId` still owns the session and the mod is on, read fresh:
+ * a versioned update that writes the same value back (a plain read can be stale).
+ */
+async function owns($: EngineInterface, runId: string): Promise<boolean> {
+  let ok = false
+  await update($, sessionAtom, s => {
+    ok = s.running?.runId === runId && isActive(config, s)
+    return s
+  })
+  return ok
+}
 
 /** Runs one plan within what's left of the run's budget. Never throws. */
-async function execute($: EngineInterface, r: string, plan: Plan, deadline: number): Promise<Ran> {
+async function execute($: EngineInterface, r: string, plan: Plan, deadline: number, runId: string): Promise<Ran> {
   const remaining = deadline - (await $.clock.now())
   if (remaining < MIN_CHECK_MS) return { plan, skipped: 'time budget used up' }
   const cwd = await $.fs.stat(plan.cwdAbs, { resolve: true }).catch(() => undefined)
@@ -102,6 +115,8 @@ async function execute($: EngineInterface, r: string, plan: Plan, deadline: numb
   if (cwd?.kind !== 'dir' || real === undefined || (real !== r && relativeToRoot(r, real) === null)) {
     return { plan, parsed: { ok: false, reason: `cwd ${plan.check.cwd} is missing or leaves the project` } }
   }
+  // off, revoke or /clear since the run began: start nothing more.
+  if (!(await owns($, runId))) return { plan, stopped: true }
   const timeoutMs = Math.min(config.timeoutMs, remaining)
   const started = await $.clock.now()
   let raw
@@ -135,8 +150,12 @@ async function runPending($: EngineInterface, r: string, file: ChecksFile): Prom
 
   const plans = planRun(file.checks, r, paths)
   const deadline = (await $.clock.now()) + config.batchTimeoutMs
-  const ran: Ran[] = []
-  for (const plan of plans) ran.push(await execute($, r, plan, deadline))
+  const ran: Exclude<Ran, { stopped: true }>[] = []
+  for (const plan of plans) {
+    const x = await execute($, r, plan, deadline, runId)
+    if ('stopped' in x) break
+    ran.push(x)
+  }
 
   let text: string | null = null
   await update($, sessionAtom, s => {
