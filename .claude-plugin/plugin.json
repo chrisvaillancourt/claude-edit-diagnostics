@@ -1,7 +1,7 @@
 {
   "name": "edit-diagnostics",
   "version": "0.1.0",
-  "description": "After a batch of edits, runs the repo's own checks and gives the model a short, deduplicated list of what broke.",
+  "description": "After Claude edits a file, runs the repo's own approved checks and gives the model a short, deduplicated list of what they report.",
   "types": "./types/index.d.ts",
   "userConfig": {
     "enabled": {
@@ -9,6 +9,25 @@
       "title": "Enabled",
       "description": "Turn the mod on for new sessions. /edit-diagnostics on|off overrides it for a session.",
       "default": true
+    },
+    "delivery": {
+      "type": "string",
+      "title": "Delivery",
+      "description": "tool: run checks after each edit and add the report to that edit's result. batch: run once after a response's tool calls, through the PostToolBatch hook (skipped on some machines; see README).",
+      "options": ["tool", "batch"],
+      "default": "tool"
+    },
+    "timeoutMs": {
+      "type": "number",
+      "title": "Per-check timeout (ms)",
+      "description": "Longest a single check may run, 500 to 30000.",
+      "default": 5000
+    },
+    "batchTimeoutMs": {
+      "type": "number",
+      "title": "Per-run time budget (ms)",
+      "description": "Total time all checks of one run may take, 1000 to 30000.",
+      "default": 10000
     }
   },
   "author": {

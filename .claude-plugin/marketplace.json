@@ -9,5 +9,5 @@
       "source": "./"
     }
   ],
-  "description": "After a batch of edits, runs the repo's own checks and gives the model a short, deduplicated list of what broke."
+  "description": "After Claude edits a file, runs the repo's own approved checks and gives the model a short, deduplicated list of what they report."
 }
