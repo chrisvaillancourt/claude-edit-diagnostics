@@ -10,7 +10,9 @@ const TYPES = { id: 'types', argv: ['./node_modules/.bin/tsc', '--noEmit', '--pr
 const LINT = { id: 'lint', argv: ['lintwrap'], include: ['src/**/*.ts'], scope: 'files', parser: 'json' }
 const configText = (...checks: object[]) => JSON.stringify({ version: 1, checks: checks.length === 0 ? [TYPES] : checks })
 
-type Out = { exitCode: number; stdout: string; stderr?: string } | { deny: string } | ((argv: string[]) => { exitCode: number; stdout: string; stderr?: string } | { deny: string })
+/** A scripted child: how it exits (a `signal` ends it from outside), or a spawn that can't start. */
+type Exit = { exitCode: number; stdout: string; stderr?: string; signal?: string }
+type Out = Exit | { deny: string } | ((argv: string[]) => Exit | { deny: string })
 
 /** The engine beneath the plugin: a project at /work/proj, its files, a scripted process runner. */
 const world = (on: On, opts: { files?: Record<string, string>; approved?: string | null; outputs?: Record<string, Out>; links?: Record<string, string> } = {}) => {
@@ -32,19 +34,38 @@ const world = (on: On, opts: { files?: Record<string, string>; approved?: string
   on('fs.exists', ($, e) => ({ value: files[e.path] !== undefined || dirs.has(e.path) }))
   on('fs.read', ($, e) => (files[e.path] === undefined ? { deny: `ENOENT: no such file, open '${e.path}'` } : { value: files[e.path]! }))
   const outputs: Record<string, Out> = { tsc: { exitCode: 0, stdout: '' }, lintwrap: { exitCode: 0, stdout: '{"version":1,"findings":[]}' }, ...opts.outputs }
-  const runs: { argv: string[]; cwd?: string; timeoutMs?: number }[] = []
+  const runs: { argv: string[]; cwd?: string }[] = []
   /** Runs while a process is "running", to simulate events arriving meanwhile. */
   const during: (() => Promise<unknown>)[] = []
-  on('process.run', async ($, e) => {
-    runs.push({ argv: [...e.argv], cwd: e.init?.cwd, timeoutMs: e.init?.timeoutMs })
+  const script = async (argv: readonly string[], cwd: string | undefined) => {
+    runs.push({ argv: [...argv], cwd })
     const step = during.shift()
     if (step !== undefined) await step()
-    const name = e.argv[0]!.split('/').pop()!
+    const name = argv[0]!.split('/').pop()!
     let out = outputs[name]
-    if (typeof out === 'function') out = out([...e.argv])
-    if (out === undefined) return { deny: `spawn ${e.argv[0]} ENOENT` }
+    if (typeof out === 'function') out = out([...argv])
+    return out ?? { deny: `spawn ${argv[0]} ENOENT` }
+  }
+  // What the engine's process.run would answer (a signal-ended child reads as
+  // exit code 1). The mod runs checks through process.spawn; this stays so a
+  // return to process.run fails the signal test instead of finding no stand-in.
+  on('process.run', async ($, e) => {
+    const out = await script(e.argv, e.init?.cwd)
     if ('deny' in out) return { deny: out.deny }
-    return { value: { exitCode: out.exitCode, stdout: out.stdout, stderr: out.stderr ?? '', isStdoutTruncated: false, isStderrTruncated: false } }
+    return { value: { exitCode: out.signal === undefined ? out.exitCode : 1, stdout: out.stdout, stderr: out.stderr ?? '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  // A stand-in for a call on $: chunks, then `{ value }` with how the child ended.
+  on('process.spawn', async function* ($, e) {
+    const argv = e.argv.map(x => x)
+    runs.push({ argv, cwd: e.cwd })
+    const step = during.shift()
+    if (step !== undefined) await step()
+    let out = outputs[argv[0]!.split('/').pop()!]
+    if (typeof out === 'function') out = out(argv)
+    if (out === undefined || 'deny' in out) return { deny: out === undefined ? `spawn ${argv[0]} ENOENT` : out.deny } as any
+    if (out.stdout !== '') yield { stream: 'stdout' as const, text: out.stdout }
+    if ((out.stderr ?? '') !== '') yield { stream: 'stderr' as const, text: out.stderr ?? '' }
+    return { value: out.signal === undefined ? { code: out.exitCode, signal: null } : { code: null, signal: out.signal } } as any
   })
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
@@ -85,7 +106,7 @@ describe('tool delivery', () => {
     const w = world(on, { outputs: { tsc: { exitCode: 2, stdout: TSC_ERR } } })
     await start($)
     const r = await write($, `${ROOT}/src/a.ts`)
-    expect(w.runs).toEqual([{ argv: [`${ROOT}/node_modules/.bin/tsc`, '--noEmit', '--pretty', 'false'], cwd: ROOT, timeoutMs: 5000 }])
+    expect(w.runs).toEqual([{ argv: [`${ROOT}/node_modules/.bin/tsc`, '--noEmit', '--pretty', 'false'], cwd: ROOT }])
     expect(r.ref).toBe(7)
     expect(r.text).toBe('The file was updated.')
     expect(r.result).toEqual({ type: 'update', filePath: `${ROOT}/src/a.ts` })
@@ -152,6 +173,30 @@ describe('tool delivery', () => {
     w.outputs.tsc = { exitCode: 2, stdout: TSC_ERR }
     // Still the first complete observation: unbaselined, shown in full.
     expect(ctx(await edit($, `${ROOT}/src/a.ts`))).toContain('first check of src/a.ts')
+  })
+
+  test('a check ended by a signal is not verified and teaches nothing, even with valid findings printed', async ($, on) => {
+    const w = world(on, { outputs: { tsc: { exitCode: 1, stdout: 'src/b.ts(1,1): error TS2322: First diagnostic.\n', signal: 'SIGTERM' } } })
+    await start($)
+    const r = await write($, `${ROOT}/src/a.ts`)
+    expect(ctx(r)).toContain('types (tsc): NOT VERIFIED: ended by SIGTERM')
+    w.outputs.tsc = { exitCode: 0, stdout: '' }
+    expect(ctx(await edit($, `${ROOT}/src/a.ts`))).toContain('no findings in src/a.ts (first check of these files)')
+  })
+
+  test('a check still running at its timeout is stopped and not verified', async ($, on) => {
+    const w = world(on, { outputs: { tsc: { exitCode: 2, stdout: TSC_ERR } } })
+    await start($)
+    w.during.push(async () => w.clock.advance(6000))
+    const r = await write($, `${ROOT}/src/a.ts`)
+    expect(ctx(r)).toContain('types (tsc): NOT VERIFIED: timed out after 5000 ms')
+    expect(ctx(r)).not.toContain('TS2322')
+  })
+
+  test('output over 512 KiB is not verified', async ($, on) => {
+    world(on, { outputs: { tsc: { exitCode: 2, stdout: `${TSC_ERR}${'  x\n'.repeat(140000)}` } } })
+    await start($)
+    expect(ctx(await write($, `${ROOT}/src/a.ts`))).toContain('types (tsc): NOT VERIFIED: output too large (over 512 KiB)')
   })
 
   test('a check that would start past the run budget is not run', async ($, on) => {

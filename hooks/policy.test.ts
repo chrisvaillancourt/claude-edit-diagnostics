@@ -11,7 +11,6 @@ import {
   isActive,
   joinAbs,
   nextSnapshots,
-  outputProblem,
   parseArgs,
   parseChecksFile,
   planRun,
@@ -186,15 +185,6 @@ describe('planRun', () => {
     expect(plans[0]!.files.length).toBe(50)
     expect(plans[0]!.notChecked).toBe(3)
     expect(plans[0]!.argv.length).toBe(52)
-  })
-})
-
-describe('outputProblem', () => {
-  const raw = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
-  test('truncation and size are problems', async () => {
-    expect(outputProblem(raw)).toBe(null)
-    expect(outputProblem({ ...raw, isStdoutTruncated: true })).toBe('output too large (the engine cut it at 4 MiB)')
-    expect(outputProblem({ ...raw, stdout: 'x'.repeat(512 * 1024 + 1) })).toBe('output too large (over 512 KiB)')
   })
 })
 

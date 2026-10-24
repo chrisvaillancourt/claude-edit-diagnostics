@@ -270,15 +270,6 @@ export function withRealPaths(parsed: ParseResult, cwdAbs: string, real: Readonl
   }
 }
 
-export type RawRun = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
-
-/** Why a finished run's output can't be parsed at all, or null. */
-export function outputProblem(r: RawRun): string | null {
-  if (r.isStdoutTruncated || r.isStderrTruncated) return 'output too large (the engine cut it at 4 MiB)'
-  if (r.stdout.length + r.stderr.length > MAX_OUTPUT_CHARS) return 'output too large (over 512 KiB)'
-  return null
-}
-
 // ---------------------------------------------------------------- novelty
 
 export type Group = {

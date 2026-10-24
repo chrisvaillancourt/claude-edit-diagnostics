@@ -6,6 +6,7 @@ import {
   BUSY_NOTE,
   CONFIG_PATH,
   INITIAL,
+  MAX_OUTPUT_CHARS,
   MIN_CHECK_MS,
   PENDING_NOTE,
   USAGE,
@@ -18,7 +19,6 @@ import {
   isActive,
   nextSnapshots,
   noticeKey,
-  outputProblem,
   parseArgs,
   parseChecksFile,
   planRun,
@@ -93,6 +93,64 @@ async function editedPath($: EngineInterface, r: string, path: string): Promise<
   return relativeToRoot(r, stat.realPath)
 }
 
+type Child = { kind: 'exited'; exitCode: number; stdout: string; stderr: string } | { kind: 'failed'; reason: string }
+
+/**
+ * Runs one check through `$.process.spawn`, which reports a signal apart
+ * from an exit code (`$.process.run` reads a killed child as exit 1, and every
+ * parser accepts 1). Bounded by a `$.clock.after` timer that closes the stream
+ * (which kills the child) at `timeoutMs`, and by MAX_OUTPUT_CHARS of output.
+ * The hook only ever awaits the stream's own pulls, an engine call, never a
+ * local promise; checked live on 2.1.310 past the hook budget (14 s).
+ */
+async function runChild($: EngineInterface, argv: readonly string[], cwd: string, timeoutMs: number): Promise<Child> {
+  let stream: ReturnType<EngineInterface['process']['spawn']>
+  try {
+    stream = $.process.spawn({ argv, cwd })
+  } catch (err) {
+    return { kind: 'failed', reason: `could not run: ${errText(err)}` }
+  }
+  let stop: 'timeout' | 'size' | null = null
+  const close = () => {
+    void stream.return(undefined as never).catch(() => undefined)
+  }
+  const timer = $.clock.after(timeoutMs, () => {
+    stop ??= 'timeout'
+    close()
+  })
+  let stdout = ''
+  let stderr = ''
+  try {
+    for (;;) {
+      let step: IteratorResult<{ stream: 'stdout' | 'stderr'; text: string }, { code: number | null; signal: string | null } | undefined>
+      try {
+        step = await stream.next()
+      } catch (err) {
+        if (stop !== null) break
+        return { kind: 'failed', reason: `could not run: ${errText(err)}` }
+      }
+      if (stop !== null) break
+      if (step.done) {
+        const end = step.value
+        if (end === undefined || end === null) return { kind: 'failed', reason: 'ended without an exit status' }
+        if (end.signal !== null) return { kind: 'failed', reason: `ended by ${end.signal}` }
+        if (end.code === null) return { kind: 'failed', reason: 'ended without an exit status' }
+        return { kind: 'exited', exitCode: end.code, stdout, stderr }
+      }
+      if (step.value.stream === 'stdout') stdout += step.value.text
+      else stderr += step.value.text
+      if (stdout.length + stderr.length > MAX_OUTPUT_CHARS) {
+        stop = 'size'
+        close()
+        break
+      }
+    }
+  } finally {
+    timer.cancel()
+  }
+  return { kind: 'failed', reason: stop === 'size' ? 'output too large (over 512 KiB)' : `timed out after ${timeoutMs} ms` }
+}
+
 type Ran = { plan: Plan; parsed: ParseResult } | { plan: Plan; skipped: string } | { plan: Plan; stopped: true }
 
 /**
@@ -120,18 +178,9 @@ async function execute($: EngineInterface, r: string, plan: Plan, deadline: numb
   // off, revoke or /clear since the run began: start nothing more.
   if (!(await owns($, runId))) return { plan, stopped: true }
   const timeoutMs = Math.min(config.timeoutMs, remaining)
-  const started = await $.clock.now()
-  let raw
-  try {
-    raw = await $.process.run(plan.argv, { cwd: plan.cwdAbs, timeoutMs })
-  } catch (err) {
-    const elapsed = (await $.clock.now()) - started
-    const reason = elapsed >= timeoutMs - 50 ? `timed out after ${timeoutMs} ms` : `could not run: ${errText(err)}`
-    return { plan, parsed: { ok: false, reason } }
-  }
-  const problem = outputProblem(raw)
-  if (problem !== null) return { plan, parsed: { ok: false, reason: problem } }
-  const parsed = parseOutput(plan.check.parser, raw)
+  const child = await runChild($, plan.argv, plan.cwdAbs, timeoutMs)
+  if (child.kind === 'failed') return { plan, parsed: { ok: false, reason: child.reason } }
+  const parsed = parseOutput(plan.check.parser, child)
   // Give reported paths the same identity as edited ones (both realPath).
   const realOf = new Map<string, string>()
   for (const abs of findingPaths(parsed, plan.cwdAbs)) {
