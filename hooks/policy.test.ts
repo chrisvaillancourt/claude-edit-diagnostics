@@ -15,6 +15,7 @@ import {
   parseChecksFile,
   planRun,
   relativeToRoot,
+  utf8Bytes,
 } from './policy'
 import type { CheckOutcome } from './policy'
 import type { Check, Finding } from '../types'
@@ -157,6 +158,12 @@ describe('globs and paths', () => {
     expect(relativeToRoot(ROOT, '/work/proj/src/a.ts')).toBe('src/a.ts')
     expect(relativeToRoot(ROOT, '/work/project/a.ts')).toBe(null)
     expect(relativeToRoot(ROOT, ROOT)).toBe(null)
+  })
+})
+
+describe('utf8Bytes', () => {
+  test('counts UTF-8 bytes of ASCII, 2-, 3- and 4-byte characters', async () => {
+    expect([utf8Bytes(''), utf8Bytes('a'), utf8Bytes('é'), utf8Bytes('\u2603'), utf8Bytes('😀'), utf8Bytes('a☃😀é')]).toEqual([0, 1, 2, 3, 4, 10])
   })
 })
 

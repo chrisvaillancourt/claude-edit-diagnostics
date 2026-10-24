@@ -199,6 +199,13 @@ describe('tool delivery', () => {
     expect(ctx(await write($, `${ROOT}/src/a.ts`))).toContain('types (tsc): NOT VERIFIED: output too large (over 512 KiB)')
   })
 
+  test('the 512 KiB output cap counts UTF-8 bytes, not characters', async ($, on) => {
+    // 300,000 snowmen are 300,000 UTF-16 units but 900,000 UTF-8 bytes.
+    world(on, { outputs: { tsc: { exitCode: 2, stdout: '\u2603'.repeat(300000) } } })
+    await start($)
+    expect(ctx(await write($, `${ROOT}/src/a.ts`))).toContain('types (tsc): NOT VERIFIED: output too large (over 512 KiB)')
+  })
+
   test('a check that would start past the run budget is not run', async ($, on) => {
     const text = configText(TYPES, { ...LINT, id: 'lint2' })
     const w = world(on, { approved: text, files: { [CONFIG]: text } })

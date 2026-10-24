@@ -6,7 +6,7 @@ import {
   BUSY_NOTE,
   CONFIG_PATH,
   INITIAL,
-  MAX_OUTPUT_CHARS,
+  MAX_OUTPUT_BYTES,
   MIN_CHECK_MS,
   PENDING_NOTE,
   USAGE,
@@ -26,6 +26,7 @@ import {
   relativeToRoot,
   statusText,
   summaryLines,
+  utf8Bytes,
   withRealPaths,
 } from './policy'
 import type { CheckOutcome, ConfigState, Plan } from './policy'
@@ -99,7 +100,7 @@ type Child = { kind: 'exited'; exitCode: number; stdout: string; stderr: string 
  * Runs one check through `$.process.spawn`, which reports a signal apart
  * from an exit code (`$.process.run` reads a killed child as exit 1, and every
  * parser accepts 1). Bounded by a `$.clock.after` timer that closes the stream
- * (which kills the child) at `timeoutMs`, and by MAX_OUTPUT_CHARS of output.
+ * (which kills the child) at `timeoutMs`, and by MAX_OUTPUT_BYTES of output (UTF-8, both streams).
  * The hook only ever awaits the stream's own pulls, an engine call, never a
  * local promise; checked live on 2.1.310 past the hook budget (14 s).
  */
@@ -120,6 +121,8 @@ async function runChild($: EngineInterface, argv: readonly string[], cwd: string
   })
   let stdout = ''
   let stderr = ''
+  /** Both streams together, in UTF-8 bytes. */
+  let bytes = 0
   try {
     for (;;) {
       let step: IteratorResult<{ stream: 'stdout' | 'stderr'; text: string }, { code: number | null; signal: string | null } | undefined>
@@ -139,7 +142,8 @@ async function runChild($: EngineInterface, argv: readonly string[], cwd: string
       }
       if (step.value.stream === 'stdout') stdout += step.value.text
       else stderr += step.value.text
-      if (stdout.length + stderr.length > MAX_OUTPUT_CHARS) {
+      bytes += utf8Bytes(step.value.text)
+      if (bytes > MAX_OUTPUT_BYTES) {
         stop = 'size'
         close()
         break

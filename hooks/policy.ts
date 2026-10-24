@@ -7,11 +7,30 @@ export const CONFIG_PATH = '.claude/edit-diagnostics.json'
 export const MAX_CONFIG_CHARS = 16384
 export const MAX_CHECKS = 4
 export const MAX_OPERANDS = 50
-export const MAX_OUTPUT_CHARS = 512 * 1024
+/** Combined stdout + stderr, in UTF-8 bytes. */
+export const MAX_OUTPUT_BYTES = 512 * 1024
 export const MAX_FINDINGS = 30
 export const MAX_REPORT_CHARS = 8000
 export const MAX_MESSAGE_CHARS = 400
 export const MAX_SNAPSHOT_KEYS = 200
+/** The UTF-8 byte length of `text`, one pass, no allocation (a lone surrogate counts 3, as its U+FFFD would). */
+export function utf8Bytes(text: string): number {
+  let n = 0
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    if (c < 0x80) n += 1
+    else if (c < 0x800) n += 2
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
+      const d = text.charCodeAt(i + 1)
+      if (d >= 0xdc00 && d <= 0xdfff) {
+        n += 4
+        i++
+      } else n += 3
+    } else n += 3
+  }
+  return n
+}
+
 /** A check needs at least this much of the run's budget left to start. */
 export const MIN_CHECK_MS = 500
 const PARSERS: readonly ParserName[] = ['tsc', 'ruff-json', 'json']
