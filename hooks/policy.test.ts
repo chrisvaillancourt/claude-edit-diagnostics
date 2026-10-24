@@ -323,6 +323,16 @@ describe('formatReport', () => {
     expect(r.omitted.size > 0).toBe(true)
   })
 
+  test('every check keeps its status line when edited paths are long', async () => {
+    const files = Array.from({ length: 5 }, (_, i) => `src/${'d'.repeat(800)}/${i}-${'f'.repeat(20)}.ts`)
+    const clean = (id: string) => assessCheck(check({ id, include: ['**'] }), ok([]), files, ROOT, ROOT, {})
+    const r = formatReport([clean('one'), clean('two'), clean('three'), { kind: 'failed', id: 'missing', parser: 'json', reason: 'could not run: spawn missing ENOENT' }])
+    expect(r.text).toContain('missing (json): NOT VERIFIED: could not run: spawn missing ENOENT')
+    expect(r.text).toContain('three (tsc): no findings in ')
+    expect(r.text).not.toContain('report cut at')
+    expect(r.text.length <= 8000).toBe(true)
+  })
+
   test('multi-line messages stay indented under their finding', async () => {
     const r = formatReport([assessCheck(check(), ok([fd('src/a.ts', 5, 'Outer.\n  Inner.')]), ['src/a.ts'], ROOT, ROOT, {})])
     expect(r.text).toContain('  src/a.ts:5:1 error TS2322: Outer.\n      Inner.')

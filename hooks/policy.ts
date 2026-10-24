@@ -406,8 +406,23 @@ export function nextSnapshots(snapshots: Snapshots, outcomes: readonly CheckOutc
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
+/** A path for a status line: at most 120 characters, its tail kept. */
+function shortPath(p: string): string {
+  return p.length <= 120 ? p : `…${p.slice(-119)}`
+}
+
+/**
+ * At most five paths of at most 120 characters each, so every status line
+ * stays under about 800 characters and four of them always fit the report
+ * before any finding is placed.
+ */
 function fileList(files: readonly string[]): string {
-  return files.length <= 5 ? files.join(', ') : `${files.slice(0, 5).join(', ')} and ${files.length - 5} more`
+  const shown = files.slice(0, 5).map(shortPath).join(', ')
+  return files.length <= 5 ? shown : `${shown} and ${files.length - 5} more`
+}
+
+function shortReason(reason: string): string {
+  return reason.length <= 300 ? reason : `${reason.slice(0, 300)}…`
 }
 
 function findingLine(f: Finding): string {
@@ -420,8 +435,8 @@ export const REPORT_HEADER = `edit-diagnostics: checks from ${CONFIG_PATH} (tool
 
 function headLine(o: CheckOutcome): string {
   const name = `${o.id} (${o.parser})`
-  if (o.kind === 'failed') return `${name}: NOT VERIFIED: ${o.reason}`
-  if (o.kind === 'skipped') return `${name}: NOT VERIFIED: not run, ${o.reason}`
+  if (o.kind === 'failed') return `${name}: NOT VERIFIED: ${shortReason(o.reason)}`
+  if (o.kind === 'skipped') return `${name}: NOT VERIFIED: not run, ${shortReason(o.reason)}`
   const n = o.groups.reduce((s, g) => s + g.findings.length, 0)
   if (n === 0 && o.still === 0) return `${name}: no findings in ${fileList(o.files)}${o.unbaselined.length > 0 ? ' (first check of these files)' : ''}`
   const stillText = o.still > 0 ? `${o.still} still present from earlier reports` : ''
