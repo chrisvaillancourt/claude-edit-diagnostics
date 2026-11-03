@@ -341,9 +341,12 @@ export const register: Register = (on, options) => {
     return note === null ? r : { ...r, context: [...(r.context ?? []), note] }
   }).catch(($, e, next) => next(e)) // fail open: the native result always stands
 
-  // Batch delivery hooks are registered only in batch mode: on hosts where a
-  // managed plugin skips classic.PostToolBatch, the engine tells the model
-  // about every skipped hook, which would be noise in tool mode.
+  // Batch delivery hooks are registered only in batch mode. Claude Code's
+  // built-in cc-plugin-sec-default (seated ahead of user mods on Team and
+  // Enterprise accounts, and on machines with managed settings or a managed
+  // MCP file) sends every classic.* event on past this mod, and the engine
+  // tells the model about each skipped hook: noise in tool mode. turn.start is
+  // not skipped, so the health notice below still reaches the person.
   if (config.delivery !== 'batch') return
   on('classic.PostToolBatch', async ($, e, next) => {
     const r = await next(e)

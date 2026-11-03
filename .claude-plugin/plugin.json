@@ -13,7 +13,7 @@
     "delivery": {
       "type": "string",
       "title": "Delivery",
-      "description": "tool: run checks after each edit and add the report to that edit's result. batch: run once after a response's tool calls, through the PostToolBatch hook (skipped on some machines; see README).",
+      "description": "tool: run checks after each edit and add the report to that edit's result. batch: run once after a response's tool calls, through the PostToolBatch hook, which never runs on Team or Enterprise accounts or on machines with managed settings (see README).",
       "options": ["tool", "batch"],
       "default": "tool"
     },
