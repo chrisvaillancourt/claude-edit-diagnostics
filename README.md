@@ -81,16 +81,42 @@ Any other field, or a bad value, makes the config invalid, and the mod says why.
 - Saying which edit caused a finding.
 - Language-server diagnostics, watch modes, interactive commands, package installation, formatting and automatic repair.
 - ESLint, pyright, mypy, cargo, go vet and other formats: wrap them to print the `json` format.
-- Exact batching in `tool` delivery mode, and delivery through a plugin seated above this one that skips its hooks.
+- Exact batching in `tool` delivery mode, and `batch` delivery wherever Claude Code's built-in `cc-plugin-sec-default` is seated (see [Team, Enterprise and managed environments](#team-enterprise-and-managed-environments)).
 - Making approved commands read-only: they can write caches, build output or anything else they normally write.
 - Background descendants left by a wrapper that exits. The timeout ends the command the mod started, and its process tree while that command is still alive. A wrapper script that exits (or is killed) and leaves child processes holding its stdout or stderr is out of contract: those descendants can keep running past the timeout. Configure the checker binary itself in `argv`, or a wrapper that `exec`s it.
 
 ## Delivery modes
 
-On Claude Code 2.1.310 a built-in managed plugin can pass the `PostToolBatch` hook on past user plugins (seen live), so the default is `tool`:
+On Team and Enterprise accounts, and on machines with managed settings, Claude Code's built-in `cc-plugin-sec-default` passes the `PostToolBatch` hook on past user plugins (seen live on 2.1.310 and 2.1.317), so `batch` mode never runs there. The default is `tool`:
 
 - `tool` (default): checks run after each successful edit, and the report follows that edit's result. Two edits in one response run the checks twice.
 - `batch`: checks run once after all of a response's tool calls finish. Each edit gets a "checks pending, not verified yet" note first. If `PostToolBatch` never reaches the mod, Claude only ever sees "pending", and the next turn logs that you need `tool` mode.
+
+## Team, Enterprise and managed environments
+
+Claude Code ships a built-in plugin, `cc-plugin-sec-default@builtin`, that keeps an organization's classic hooks, prompt content, settings and tool policy out of reach of the plugins a person installs. It isn't installed from a marketplace and `claude plugin list` doesn't show it. It's seated ahead of every user-installed mod, this one included, when any of these holds:
+
+- the account belongs to a Team or Enterprise organization;
+- the machine has managed settings or a managed MCP file;
+- the organization's managed `prependPlugins` lists it.
+
+When it's seated, it passes some events on past user mods, so their hooks for those events never run. Of this mod's hooks it skips one: `classic.PostToolBatch`, which the mod registers only in `batch` delivery mode. `tool.call`, `turn.start`, `session.start` and `command.run` still reach the mod.
+
+- **`tool` delivery (the default) works as described.** Checks run after each edit, and the report follows that edit's result.
+- **`batch` delivery doesn't work.** Each edit gets the "checks pending, not verified yet" note, and the batch run that would follow never happens, so Claude never gets a result. No edit is reported clean. When the next turn starts, the mod logs once per session that `PostToolBatch` didn't reach it and you need `tool` mode. Keep `delivery` at `tool` on these accounts and machines.
+
+The mod has no workaround for `batch` mode. None of the events that still reach it can add one report per batch in the place `PostToolBatch` puts it: `turn.step` fires before each model request but can't add to that request, and `tool.call` can add text only to a single call's result.
+
+To check whether it's seated, run Claude Code with `--debug` (or `--debug-file <file>`) and look for lines like these:
+
+```
+cc-plugin-sec-default@builtin seated outermost: the organization is team
+edit-diagnostics: classic.PostToolBatch bypassed by cc-plugin-sec-default (tier user); beneath runs
+```
+
+The first line names the reason it's seated. The second appears only in `batch` mode, after a response's tool calls finish. The engine also adds `edit-diagnostics: its classic.PostToolBatch hook was skipped. "cc-plugin-sec-default" runs first and sent the event on past it.` to the transcript, and Claude reads it.
+
+A person can't turn this off from user settings. An organization admin can, for the whole organization, through managed settings (server-managed settings, MDM or `managed-settings.json`): a managed `prependPlugins` list that doesn't name `cc-plugin-sec-default` leaves it unseated.
 
 ## Command
 
@@ -117,7 +143,7 @@ No model calls. The cost is the checks' own run time, which Claude waits for aft
 ## Limitations
 
 - Checks run synchronously; there's no late delivery of slow results. A slow project check needs a higher `timeoutMs` or a faster command.
-- `tool` mode runs the checks once per edit; `batch` mode is unverified live on 2.1.310 because the managed plugin skipped its hook.
+- `tool` mode runs the checks once per edit. `batch` mode never runs on Team or Enterprise accounts or on machines with managed settings, and hasn't been verified live anywhere, because every live test so far ran where `cc-plugin-sec-default` skipped its hook.
 - Headless runs (`claude -p`) can't approve; they use an approval made earlier in an interactive session.
 - No ESLint parser: ESLint wasn't available to capture real output from. Use the `json` format through a wrapper.
 - Paths in a check's output are resolved on disk (links followed) to match them with edited files, up to 200 distinct paths per check; past that a path reached through a link may count as another file.
@@ -133,6 +159,8 @@ claude plugin install edit-diagnostics@edit-diagnostics --scope user
 ```
 
 Or from inside Claude Code: `/plugin install edit-diagnostics --marketplace chrisvaillancourt/claude-edit-diagnostics`.
+
+On a Team or Enterprise account, or a machine with managed settings, keep the default `tool` delivery: `batch` delivery never runs there (see [Team, Enterprise and managed environments](#team-enterprise-and-managed-environments)).
 
 To work on it locally, add your clone as the marketplace instead (`claude plugin marketplace add <path to clone>`). The plugin is read from that folder; after editing, run `/reload-plugins`.
 
